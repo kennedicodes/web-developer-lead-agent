@@ -2,7 +2,9 @@
 
 ## What This Is
 
-An automated Python agent that finds small businesses in high-value metro areas across the **East Coast and Midwest** that are missing AI chatbots on their websites. Target industries: **dentists, salons, and medical clinics**. Qualified leads are written directly to a Google Sheet.
+An automated Python agent that finds local businesses **without a website** across the **East Coast and Midwest** and adds them to a Google Sheet lead list. Each run adds up to **50 new leads** and never adds a business already in the sheet.
+
+Businesses come from the **Google Places API** (Google Maps listings). Each result says whether the business has a website, so finding and checking businesses happen in one step. A run takes about a minute.
 
 ---
 
@@ -16,84 +18,75 @@ Highland Park TX, Southlake TX, The Woodlands TX, Austin TX, Nashville TN, Frank
 
 ---
 
-## Target Industries & Search Keywords
+## Target Industries
 
-| Industry | Keywords |
-|----------|----------|
-| Dental | dentist, dental clinic, orthodontist |
-| Salons | hair salon, nail salon, day spa, beauty salon |
-| Medical | medical clinic, family doctor, urgent care |
+Any business type works. `config.py` focuses on local services where businesses often have no website: home services (plumbers, electricians, HVAC, roofers, handymen, painters, locksmiths…), landscaping, cleaning, automotive, barbers/salons, tailors, movers, pet grooming, daycare, tutoring, and food. To change targets, edit `INDUSTRIES` or `CITIES`. Saved progress resets automatically when the search list changes.
 
 ---
 
-## What Was Built
+## Files
 
-### `config.py`
-Central configuration: Google Sheet ID, industry keyword groups, city list, and chatbot signature strings used for detection.
-
-### `scraper.py`
-Scrapes Yelp search results for a given keyword + city pair. Returns up to 10 business profile URLs, then pulls each business's name, phone, address, and website URL from their Yelp page.
-
-### `detector.py`
-Uses **Playwright** (headless Chromium) to fully render each business's website and scan the page source for known chatbot signatures: Intercom, Drift, Crisp, Tidio, Zendesk, Freshchat, LiveChat, Tawk.to, HubSpot, Olark, PureChat, and others. Businesses that already have a chatbot are skipped.
-
-### `extractor.py`
-Crawls the business website to find:
-- **Email address** — checks homepage for `mailto:` links and regex email patterns, then follows contact/about/team sub-pages.
-- **Decision maker name** — scans contact and about pages for names near titles like Owner, Founder, Director, CEO, Dr., Principal, Manager.
-
-### `logger.py`
-Maintains a local `searched.txt` file to persist which websites have already been processed across runs, preventing duplicate work.
-
-### `main.py`
-Orchestrates the full pipeline:
-1. Connects to Google Sheets via a service account (`creds.json`)
-2. Loads existing sheet data to avoid duplicates (checks website, name, and address)
-3. Loads the local search log
-4. Iterates every industry × keyword × city combination
-5. For each business: scrapes details → deduplicates → checks for chatbot → extracts contact info → appends row to sheet
-
-**Sheet columns:** Name, Phone, Email, Decision Maker, Address, Industry, Website, Status (`New Lead`)
-
----
-
-## Tech Stack
-
-| Tool | Purpose |
+| File | Purpose |
 |------|---------|
-| `requests` + `BeautifulSoup` | Yelp scraping and contact extraction |
-| `Playwright` (headless Chromium) | JavaScript-rendered chatbot detection |
-| `gspread` + Google Sheets API | Lead output and duplicate checking |
-| `google-auth` | Service account authentication |
+| `config.py` | Sheet ID, industry keywords, cities, monthly API call limit, sites that don't count as a website |
+| `places.py` | Google Places API search: up to 20 businesses per call with name, phone, website, city/state and open/closed status. Tracks monthly API usage |
+| `sheet.py` | Google Sheets connection, reading existing leads, name/phone normalization, dedupe, writing rows |
+| `progress.py` | Saves which search to resume from (`search_progress.json`) |
+| `run_log.py` | Saves each run's output and any crash to `run_log.txt` |
+| `main.py` | Runs the pipeline |
 
 ---
 
-## How to Run
+## Sheet Layout
 
-```bash
-# Install dependencies
-pip install requests beautifulsoup4 playwright gspread google-auth
-playwright install chromium
+The tab has a title and live metrics above the table. The agent finds the **"Business Name"** header row, reads every lead below it, and writes new leads into the next empty row.
 
-# Run the agent
-python main.py
-```
+| A | B | C | D | E+ |
+|---|---|---|---|---|
+| Business name | Phone | Email (left blank; Google doesn't provide emails) | City, State | left blank (filled manually) |
 
-Requires `creds.json` (Google service account key) in the project root and the target Sheet shared with the service account email.
+---
+
+## Pipeline
+
+1. Load every existing lead from the sheet and confirm the agent can edit it.
+2. Work through each "keyword in city" search (e.g. "plumber in Naples, FL"), resuming where the last run stopped. Each search returns up to 3 pages of 20 businesses.
+3. For each business:
+   - **Has a website?** Skip it. A Facebook, Yelp or booking page doesn't count as a website, so those businesses are still leads.
+   - **Permanently or temporarily closed?** Skip it.
+   - **No phone number?** Skip it.
+   - **Already in the sheet?** Skip it.
+   - Otherwise, add it.
+4. Stop after 50 leads, or after every search has been run once.
 
 ---
 
 ## Deduplication Strategy
 
-The agent avoids writing the same business twice using three checks (applied in order):
-1. Website URL already in sheet
-2. Business name already in sheet
-3. Address already in sheet
+Older rows are inconsistent: column A may contain just the name, "Name Phone", or "Name • Phone". To handle this, the agent builds two lookup sets:
 
-It also skips any website already recorded in `searched.txt` from a prior run.
+- **Phones:** digits from column B, plus any phone number found inside column A. These are normalized to the last 10 digits.
+- **Names:** column A with any phone number, bullets, punctuation and suffixes (LLC, Inc, Co, The…) stripped, then lowercased.
+
+A business counts as a duplicate if either its phone or its normalized name matches. Leads added during a run go into the same sets, so a run can't add the same business twice.
 
 ---
 
-## Chatbot Signatures Detected
+## How to Run
 
-`intercom`, `drift`, `crisp`, `tidio`, `zendesk`, `freshchat`, `livechat`, `tawk.to`, `hubspot-messages`, `olark`, `purechat`, `chatbot`, `chat-widget`, `fb-messenger`
+```powershell
+python -m venv venv
+.\venv\Scripts\Activate.ps1
+pip install gspread google-auth
+python main.py
+```
+
+Requires:
+- `creds.json` (Google service account key) in the project root, with the sheet shared (**Editor**) with the service account's email.
+- A Google Places API key, either in the `GOOGLE_PLACES_API_KEY` environment variable or in `places_api_key.txt`. Create it in Google Cloud Console: enable **Places API (New)**, turn on billing, and restrict the key to that API.
+
+**Costs:**
+- The Google Sheets API is free.
+- A 50-lead run uses roughly 20–25 Places API calls. Each call returns up to 20 businesses, and about 2–3 per call have no website.
+- Google includes 1,000 calls a month free (about 40 runs). After that, it charges about $35 per 1,000 calls (about $0.80 per run).
+- `MAX_PLACES_CALLS_PER_MONTH` in `config.py` (default 1,000) stops the agent at the free limit. Raise it only if you're willing to pay.

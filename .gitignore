@@ -4,3 +4,8 @@ __pycache__/
 *.pyc
 searched.txt
 search_progress.json
+has_website.txt
+places_usage.json
+places_api_key.txt
+.venv/
+run_log.txt

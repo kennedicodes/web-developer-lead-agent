@@ -1,156 +1,110 @@
-import gspread
-from google.oauth2.service_account import Credentials
 import time
-from config import SHEET_ID, INDUSTRIES, CITIES
-from scraper import search_yelp, get_business_details, close_browser
-from extractor import check_website
-from logger import load_searched, log_searched
-from progress import load_progress, save_progress
+import run_log
+from config import INDUSTRIES, CITIES
+from places import search_businesses, quota_reached, calls_this_month
+from sheet import connect, load_existing, check_write_access, is_duplicate, add_lead
+from progress import query_signature, load_progress, save_progress
 
-creds = Credentials.from_service_account_file("creds.json", scopes=[
-    "https://www.googleapis.com/auth/spreadsheets"
-])
-client = gspread.authorize(creds)
-sheet = client.open_by_key(SHEET_ID).sheet1
+MAX_LEADS_PER_RUN = 50
+MAX_API_FAILURES = 3  # stop if the Places API keeps failing
 
-existing_rows = sheet.get_all_values()[1:]
-existing_websites = set(row[5] for row in existing_rows if len(row) > 5 and row[5])
-existing_names = set(row[2].lower() for row in existing_rows if len(row) > 2 and row[2])
-existing_addresses = set(row[4].lower() for row in existing_rows if len(row) > 4 and row[4])
+run_log.start()
+sheet = connect()
+existing_names, existing_phones, next_row = load_existing(sheet)
+check_write_access(sheet, next_row)
+print(f"Loaded {len(existing_names)} existing leads from the sheet.")
 
-searched = load_searched()
-
-MAX_LEADS_PER_RUN = 30
-
-# Flat ordered list of every (industry, keyword, city) combination
+# Flat ordered list of every (keyword, city) search, e.g. ("plumber", "Naples, FL")
 queries = []
-for industry_label, keywords in INDUSTRIES.items():
+for keywords in INDUSTRIES.values():
     for keyword in keywords:
         for city in CITIES:
-            queries.append((industry_label, keyword, city))
+            state = city.rsplit(" ", 1)
+            queries.append((keyword, f"{state[0]}, {state[1]}" if len(state) == 2 else city))
 
-# Resume from saved position
-progress = load_progress()
-query_index = progress["query_index"]
-current_page = progress["page"]
-
-if query_index >= len(queries):
-    print("All queries completed. Starting over from the beginning.\n")
-    query_index = 0
-    current_page = 1
-
-industry_label, keyword, city = queries[query_index]
-
-print(f"Starting lead generation agent...")
-print(f"Resuming: '{keyword}' in {city} — page {current_page}\n")
+signature = query_signature(queries)
+query_index = load_progress(signature) % len(queries)
 
 leads_added = 0
+skipped_has_site = 0
 skipped_duplicate = 0
-skipped_chatbot = 0
-skipped_searched = 0
-cap_hit = False
+skipped_no_phone = 0
+skipped_closed = 0
+api_failures = 0
+queries_done = 0
+stop_reason = ""
 
-try:
-    # Keep paginating the current query until 30 leads are found or query is exhausted
-    while leads_added < MAX_LEADS_PER_RUN:
-        listings, has_next = search_yelp(keyword, city, page_num=current_page)
-        print(f"  Page {current_page} — {len(listings)} businesses found")
+print("Starting lead generation agent...")
 
-        if not listings:
-            has_next = False
+# Work through searches until 50 leads are found or every search has been run once
+while leads_added < MAX_LEADS_PER_RUN and queries_done < len(queries) and not stop_reason:
+    keyword, city = queries[query_index]
+    print(f"\n'{keyword}' in {city}")
 
-        for yelp_url in listings:
-            details = get_business_details(yelp_url)
-            if not details:
+    page_token = None
+    for page_num in range(1, 4):  # Google returns at most 3 pages (60 businesses) per search
+        if quota_reached():
+            stop_reason = "Monthly Places API limit reached (MAX_PLACES_CALLS_PER_MONTH in config.py)."
+            break
+
+        businesses, page_token = search_businesses(keyword, city, page_token)
+        if businesses is None:
+            api_failures += 1
+            if api_failures >= MAX_API_FAILURES:
+                stop_reason = f"Places API failed {MAX_API_FAILURES} times in a row. Try again later."
+            break
+        api_failures = 0
+
+        for b in businesses:
+            name, phone = b["name"], b["phone"]
+
+            if b["website"]:
+                skipped_has_site += 1
                 continue
 
-            website = details["website"]
-            name = details["name"]
-            address = details["address"]
+            if not b["open"]:
+                print(f"  Skip (closed): {name}")
+                skipped_closed += 1
+                continue
 
-            if website and website in existing_websites:
-                print(f"  Skip (duplicate): {name}")
+            if not phone:
+                print(f"  Skip (no phone): {name}")
+                skipped_no_phone += 1
+                continue
+
+            if is_duplicate(name, phone, existing_names, existing_phones):
+                print(f"  Skip (already in sheet): {name}")
                 skipped_duplicate += 1
                 continue
 
-            if name and name.lower() in existing_names:
-                print(f"  Skip (duplicate): {name}")
-                skipped_duplicate += 1
-                continue
-
-            if address and address.lower() in existing_addresses:
-                print(f"  Skip (duplicate): {name}")
-                skipped_duplicate += 1
-                continue
-
-            if website and website in searched:
-                print(f"  Skip (already searched): {name}")
-                skipped_searched += 1
-                continue
-
-            if website:
-                log_searched(website)
-                searched.add(website)
-                existing_websites.add(website)
-
-            existing_names.add(name.lower())
-            existing_addresses.add(address.lower())
-
-            print(f"  Checking {name}...", end="", flush=True)
-            chatbot_found, email, director = check_website(website)
-            if chatbot_found:
-                print(" chatbot — skipping")
-                skipped_chatbot += 1
-                continue
-
-            row = [
-                director,               # A - POC
-                "New Lead",             # B - Stage
-                name,                   # C - Company
-                industry_label.title(), # D - Industry
-                address,                # E - City, State
-                website,                # F - Website
-                "",                     # G - LinkedIn (blank for now)
-                details["phone"],       # H - Phone Number
-                email,                  # I - Email
-                "",                     # J - Service Offered (fill manually)
-                "",                     # K - Fees Quoted (fill manually)
-                "",                     # L - Notes (fill manually)
-            ]
-
-            sheet.append_row(row)
+            add_lead(sheet, next_row, name, phone, "", b["city_state"], existing_names, existing_phones)
+            next_row += 1
             leads_added += 1
-            print(f" added! ({leads_added}/{MAX_LEADS_PER_RUN}): {name} ({address})")
+            print(f"  Added ({leads_added}/{MAX_LEADS_PER_RUN}): {name} | {phone} | {b['city_state']}")
+            time.sleep(1)  # stay under the Google Sheets write limit (60/minute)
 
             if leads_added >= MAX_LEADS_PER_RUN:
-                cap_hit = True
                 break
 
-            time.sleep(2)
-
-        if cap_hit:
-            # Hit 30 leads mid-page — re-process same page next run (duplicates filter already-done ones)
-            save_progress(query_index, current_page)
-            print(f"\nReached {MAX_LEADS_PER_RUN} leads. Next run resumes: '{keyword}' in {city} — page {current_page}")
+        print(f"  Page {page_num}: {len(businesses)} businesses checked ({skipped_has_site} with websites so far)")
+        if leads_added >= MAX_LEADS_PER_RUN or not page_token:
             break
 
-        if has_next:
-            # More pages exist for this query — continue to next page
-            current_page += 1
-        else:
-            # Query exhausted — move to next query next run
-            next_index = query_index + 1
-            if next_index >= len(queries):
-                save_progress(0, 1)
-                print(f"\nAll queries completed! Next run will start from the beginning.")
-            else:
-                next_industry, next_kw, next_city = queries[next_index]
-                save_progress(next_index, 1)
-                print(f"\n'{keyword}' in {city} fully processed. Next run: '{next_kw}' in {next_city}")
-            break
+    if stop_reason or leads_added >= MAX_LEADS_PER_RUN:
+        # Stopped partway through this search — redo it next run (businesses already added are skipped)
+        save_progress(query_index, signature)
+        break
 
-finally:
-    close_browser()
+    query_index = (query_index + 1) % len(queries)
+    queries_done += 1
+    save_progress(query_index, signature)
 
-print(f"\nDone! Added: {leads_added} | Duplicates: {skipped_duplicate} | Already searched: {skipped_searched} | Chatbot filtered: {skipped_chatbot}")
+if stop_reason:
+    print(f"\n{stop_reason}")
+
+keyword, city = queries[query_index]
+print(f"\nDone! Added: {leads_added} | Have website: {skipped_has_site} | Already in sheet: {skipped_duplicate} | "
+      f"No phone: {skipped_no_phone} | Closed: {skipped_closed}")
+print(f"Places API calls this month: {calls_this_month()}")
+print(f"Next run starts with: '{keyword}' in {city}")
 print("Check your Google Sheet.")
