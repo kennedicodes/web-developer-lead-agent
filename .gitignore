@@ -9,3 +9,6 @@ places_usage.json
 places_api_key.txt
 .venv/
 run_log.txt
+serper_api_key.txt
+serper_usage.json
+daily_leads.json

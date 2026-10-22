@@ -15,6 +15,10 @@ Sheet columns: A = Business name, B = Phone, C = Email, D = City/State (E+ left 
 - [x] Fail fast if the service account can't edit the sheet
 - [x] Save each run's output and any crash to `run_log.txt`
 - [x] Replace Yellow Pages scraping (rate-limited) with Google Places API search (`places.py`), with a monthly call cap
-- [x] Update `PROJECT_OVERVIEW.md`
+- [x] Expand `CITIES` to 109 cities (3,270 searches) so 300 leads/day doesn't run out of new businesses
+- [x] Replace `CITIES` with 187 high-net-worth cities nationwide, West Coast first (5,610 searches)
+- [x] Add `LEADS_PER_RUN = 300` and a `MAX_LEADS_PER_DAY = 300` daily cap
+- [x] Switch the data source from Google Places to Serper.dev (`serper.py`): paged search with up to 10 pages per search, monthly credit cap (live test added 5 leads for 12 credits)
+- [x] Update `PROJECT_OVERVIEW.md` for Serper setup and costs
 - [x] Verify dedupe normalization offline
 - [x] Verify live run against the sheet (3-lead test run added rows 99–101 correctly)

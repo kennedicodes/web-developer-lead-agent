@@ -2,25 +2,38 @@
 
 ## What This Is
 
-An automated Python agent that finds local businesses **without a website** across the **East Coast and Midwest** and adds them to a Google Sheet lead list. Each run adds up to **50 new leads** and never adds a business already in the sheet.
+An automated Python agent that finds local businesses **without a website** in **high-net-worth cities across the US** and adds them to a Google Sheet lead list. One run adds up to **300 new leads**, never adds a business already in the sheet, and never adds more than 300 in a day.
 
-Businesses come from the **Google Places API** (Google Maps listings). Each result says whether the business has a website, so finding and checking businesses happen in one step. A run takes about a minute.
+Businesses come from **Google Maps search results via [Serper.dev](https://serper.dev)**. Serper is a low-cost third-party service that runs the search on Google Maps and returns each business's name, phone, address and website. Finding businesses and checking for a website happen in the same call.
 
 ---
 
 ## Target Markets
 
-### East Coast
-Naples FL, Boca Raton FL, Coral Gables FL, Bethesda MD, McLean VA, Greenwich CT, Charlotte NC, Raleigh NC, Atlanta GA, Princeton NJ, Westchester NY
-
-### Midwest / South
-Highland Park TX, Southlake TX, The Woodlands TX, Austin TX, Nashville TN, Franklin TN, Naperville IL, Winnetka IL, Lake Forest IL, Edina MN, Leawood KS
-
----
+187 high-net-worth cities and suburbs in 36 states, listed in `CITIES` in `config.py`. West Coast cities come first:
+- **California:** Atherton, Palo Alto, Beverly Hills, Malibu, Newport Beach, La Jolla…
+- **Pacific Northwest:** Bellevue, Medina, Mercer Island, Lake Oswego…
+- **Mountain West / Southwest:** Scottsdale, Boulder, Aspen, Park City…
+- **Texas:** Highland Park, Southlake, The Woodlands…
+- **Midwest:** Winnetka, Hinsdale, Edina, Bloomfield Hills…
+- **South and Florida:** Brentwood TN, Buckhead, Naples, Palm Beach…
+- **Mid-Atlantic:** Bethesda, McLean…
+- **Northeast:** Greenwich, Scarsdale, Short Hills, Wellesley…
 
 ## Target Industries
 
-Any business type works. `config.py` focuses on local services where businesses often have no website: home services (plumbers, electricians, HVAC, roofers, handymen, painters, locksmiths…), landscaping, cleaning, automotive, barbers/salons, tailors, movers, pet grooming, daycare, tutoring, and food. To change targets, edit `INDUSTRIES` or `CITIES`. Saved progress resets automatically when the search list changes.
+30 local-service keywords where businesses often have no website:
+- **Home services:** plumbers, electricians, HVAC, roofers, handymen, painters, locksmiths…
+- **Outdoor:** landscaping, lawn care, tree service
+- **Cleaning:** house cleaning, carpet cleaning, dry cleaners
+- **Automotive:** auto repair, auto body, towing
+- **Personal care:** barbers, nail salons, hair salons, beauty supply
+- **Other services:** tailors, movers, pet grooming, daycare, tutoring
+- **Food:** restaurants, food trucks, bakeries
+
+30 keywords × 187 cities gives **5,610 searches**, roughly 20,000+ leads before searches start repeating.
+
+To change targets, edit `INDUSTRIES` or `CITIES`. Saved progress resets automatically when the search list changes.
 
 ---
 
@@ -28,10 +41,10 @@ Any business type works. `config.py` focuses on local services where businesses 
 
 | File | Purpose |
 |------|---------|
-| `config.py` | Sheet ID, industry keywords, cities, monthly API call limit, sites that don't count as a website |
-| `places.py` | Google Places API search: up to 20 businesses per call with name, phone, website, city/state and open/closed status. Tracks monthly API usage |
+| `config.py` | Sheet ID, industries, cities, leads per run/day, Serper credit limit, pages per search, sites that don't count as a website |
+| `serper.py` | Serper.dev Google Maps search: 20 businesses per page with name, phone, website and city/state. Tracks monthly credit usage |
 | `sheet.py` | Google Sheets connection, reading existing leads, name/phone normalization, dedupe, writing rows |
-| `progress.py` | Saves which search to resume from (`search_progress.json`) |
+| `progress.py` | Saves which search to resume from (`search_progress.json`) and counts leads added today (`daily_leads.json`) |
 | `run_log.py` | Saves each run's output and any crash to `run_log.txt` |
 | `main.py` | Runs the pipeline |
 
@@ -43,21 +56,21 @@ The tab has a title and live metrics above the table. The agent finds the **"Bus
 
 | A | B | C | D | E+ |
 |---|---|---|---|---|
-| Business name | Phone | Email (left blank; Google doesn't provide emails) | City, State | left blank (filled manually) |
+| Business name | Phone | Email (left blank; Google Maps doesn't list emails) | City, State | left blank (filled manually) |
 
 ---
 
 ## Pipeline
 
 1. Load every existing lead from the sheet and confirm the agent can edit it.
-2. Work through each "keyword in city" search (e.g. "plumber in Naples, FL"), resuming where the last run stopped. Each search returns up to 3 pages of 20 businesses.
-3. For each business:
+2. Work through each "keyword in city" search (e.g. "plumber in Naples, FL"), resuming where the last run stopped.
+3. For each search, read result pages of 20 businesses each. Stop paging when a page brings nothing new, or after 10 pages. Deeper pages tend to have more businesses without websites.
+4. For each business:
    - **Has a website?** Skip it. A Facebook, Yelp or booking page doesn't count as a website, so those businesses are still leads.
-   - **Permanently or temporarily closed?** Skip it.
    - **No phone number?** Skip it.
    - **Already in the sheet?** Skip it.
    - Otherwise, add it.
-4. Stop after 50 leads, or after every search has been run once.
+5. Stop at 300 leads for the run, or for the day.
 
 ---
 
@@ -75,18 +88,19 @@ A business counts as a duplicate if either its phone or its normalized name matc
 ## How to Run
 
 ```powershell
-python -m venv venv
-.\venv\Scripts\Activate.ps1
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
 pip install gspread google-auth
 python main.py
 ```
 
 Requires:
 - `creds.json` (Google service account key) in the project root, with the sheet shared (**Editor**) with the service account's email.
-- A Google Places API key, either in the `GOOGLE_PLACES_API_KEY` environment variable or in `places_api_key.txt`. Create it in Google Cloud Console: enable **Places API (New)**, turn on billing, and restrict the key to that API.
+- A Serper.dev API key in `serper_api_key.txt` (or the `SERPER_API_KEY` environment variable). Sign up at serper.dev; new accounts get 2,500 free credits.
 
 **Costs:**
 - The Google Sheets API is free.
-- A 50-lead run uses roughly 20–25 Places API calls. Each call returns up to 20 businesses, and about 2–3 per call have no website.
-- Google includes 1,000 calls a month free (about 40 runs). After that, it charges about $35 per 1,000 calls (about $0.80 per run).
-- `MAX_PLACES_CALLS_PER_MONTH` in `config.py` (default 1,000) stops the agent at the free limit. Raise it only if you're willing to pay.
+- Each Serper Maps search costs **3 credits**. Credits cost about $1 per 1,000 ($50 for 50,000, valid 6 months).
+- In testing, a search page averaged several businesses with no website, so 300 leads a day should use roughly **150–250 credits a day**. That's about **$5–8 a month**, or **under 0.1¢ per lead**.
+- Harder categories in affluent cities, like plumbers in Naples, use more credits per lead.
+- `MAX_SERPER_CREDITS_PER_MONTH` in `config.py` (default 10,000, about $10) stops the agent before spend can run away.

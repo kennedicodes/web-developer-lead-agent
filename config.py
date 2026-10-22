@@ -12,9 +12,12 @@ INDUSTRIES = {
     "food": ["restaurant", "food truck", "bakery"],
 }
 
-# Google Places API calls allowed per calendar month (1,000 are free; above that ~$35 per 1,000).
-# Raise this only if you're OK paying for extra lookups.
-MAX_PLACES_CALLS_PER_MONTH = 1000
+# Serper.dev credits allowed per calendar month. Each Maps search costs 3 credits; credits are ~$1 per 1,000.
+# 10,000 credits = ~$10/month max. 300 leads/day uses roughly 150-250 credits/day.
+MAX_SERPER_CREDITS_PER_MONTH = 10000
+
+# Result pages to read per search (20 businesses each). Deeper pages have more businesses without websites.
+MAX_PAGES_PER_SEARCH = 10
 
 # Websites on these sites are listings/profiles, not the business's own website
 DIRECTORY_DOMAINS = [
@@ -33,15 +36,62 @@ DIRECTORY_DOMAINS = [
     "indeed.com", "glassdoor.com", "ziprecruiter.com", "nj.com", "patch.com", "reddit.com",
 ]
 
+# Leads added per run, and the most the agent will add in one day (re-running the same day stops early)
+LEADS_PER_RUN = 50
+MAX_LEADS_PER_DAY = 300
+
+# High-net-worth cities and suburbs across the US, West Coast first
 CITIES = [
-     # EST
-    "Naples FL", "Boca Raton FL", "Coral Gables FL",
-    "Bethesda MD", "McLean VA", "Greenwich CT",
-    "Charlotte NC", "Raleigh NC", "Atlanta GA",
-    "Princeton NJ", "Westchester NY",
-    # CST
-    "Highland Park TX", "Southlake TX", "The Woodlands TX",
-    "Austin TX", "Nashville TN", "Franklin TN",
-    "Naperville IL", "Winnetka IL", "Lake Forest IL",
-    "Edina MN", "Leawood KS"
+    # California — Bay Area
+    "Atherton CA", "Palo Alto CA", "Los Altos CA", "Menlo Park CA", "Woodside CA",
+    "Saratoga CA", "Los Gatos CA", "Cupertino CA", "Hillsborough CA", "Burlingame CA",
+    "San Mateo CA", "San Francisco CA", "Mill Valley CA", "Sausalito CA", "Tiburon CA",
+    "Walnut Creek CA", "Danville CA", "Lafayette CA", "Orinda CA", "Piedmont CA",
+    "Pleasanton CA", "San Ramon CA", "Napa CA", "Sonoma CA",
+    # California — Southern / Central
+    "Beverly Hills CA", "Malibu CA", "Santa Monica CA", "Pacific Palisades CA", "Brentwood CA",
+    "Manhattan Beach CA", "Palos Verdes Estates CA", "Calabasas CA", "Westlake Village CA",
+    "Pasadena CA", "San Marino CA", "La Canada Flintridge CA", "Newport Beach CA",
+    "Laguna Beach CA", "Irvine CA", "Dana Point CA", "San Clemente CA", "Rancho Santa Fe CA",
+    "La Jolla CA", "Del Mar CA", "Carlsbad CA", "Coronado CA", "Santa Barbara CA",
+    "Montecito CA", "Carmel-by-the-Sea CA", "Palm Springs CA", "Truckee CA",
+    # Pacific Northwest
+    "Bellevue WA", "Medina WA", "Mercer Island WA", "Kirkland WA", "Redmond WA",
+    "Sammamish WA", "Seattle WA", "Issaquah WA", "Lake Oswego OR", "West Linn OR",
+    "Portland OR", "Bend OR",
+    # Mountain West / Southwest
+    "Scottsdale AZ", "Paradise Valley AZ", "Sedona AZ", "Boulder CO", "Aspen CO", "Vail CO",
+    "Cherry Hills Village CO", "Castle Rock CO", "Denver CO", "Park City UT", "Salt Lake City UT",
+    "Jackson WY", "Ketchum ID", "Boise ID", "Henderson NV", "Summerlin NV", "Reno NV",
+    "Santa Fe NM", "Honolulu HI",
+    # Texas
+    "Highland Park TX", "University Park TX", "Southlake TX", "Colleyville TX", "Plano TX",
+    "Frisco TX", "The Woodlands TX", "Bellaire TX", "Sugar Land TX", "Austin TX",
+    "West Lake Hills TX", "San Antonio TX",
+    # Midwest
+    "Winnetka IL", "Lake Forest IL", "Highland Park IL", "Glencoe IL", "Hinsdale IL",
+    "Naperville IL", "Oak Brook IL", "Chicago IL", "Edina MN", "Wayzata MN", "Minnetonka MN",
+    "Leawood KS", "Overland Park KS", "Mission Hills KS", "Ladue MO", "Clayton MO",
+    "Bloomfield Hills MI", "Birmingham MI", "Grosse Pointe MI", "Ann Arbor MI",
+    "Carmel IN", "Zionsville IN", "Dublin OH", "Upper Arlington OH", "Indian Hill OH",
+    "Shaker Heights OH", "Mequon WI",
+    # South
+    "Nashville TN", "Franklin TN", "Brentwood TN", "Mountain Brook AL", "New Orleans LA",
+    "Buckhead GA", "Alpharetta GA", "Johns Creek GA", "Milton GA",
+    "Charlotte NC", "Raleigh NC", "Cary NC", "Chapel Hill NC", "Asheville NC",
+    "Charleston SC", "Mount Pleasant SC", "Hilton Head Island SC",
+    # Florida
+    "Naples FL", "Boca Raton FL", "Palm Beach FL", "Jupiter FL", "Coral Gables FL",
+    "Key Biscayne FL", "Miami Beach FL", "Fort Lauderdale FL", "Winter Park FL",
+    "Sarasota FL", "Ponte Vedra Beach FL",
+    # Mid-Atlantic
+    "Bethesda MD", "Potomac MD", "Chevy Chase MD", "Annapolis MD", "McLean VA",
+    "Great Falls VA", "Arlington VA", "Alexandria VA", "Washington DC",
+    # Northeast
+    "Greenwich CT", "Darien CT", "New Canaan CT", "Westport CT", "Scarsdale NY", "Rye NY",
+    "Bronxville NY", "Manhattan NY", "Brooklyn NY", "Great Neck NY", "Garden City NY",
+    "Southampton NY", "East Hampton NY", "Princeton NJ", "Short Hills NJ", "Summit NJ",
+    "Montclair NJ", "Ridgewood NJ", "Saddle River NJ", "Bryn Mawr PA", "Villanova PA",
+    "Philadelphia PA", "Wellesley MA", "Weston MA", "Newton MA", "Lexington MA",
+    "Brookline MA", "Boston MA", "Newport RI",
 ]

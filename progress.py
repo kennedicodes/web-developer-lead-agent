@@ -1,8 +1,25 @@
 import hashlib
 import json
 import os
+from datetime import date
 
 PROGRESS_FILE = "search_progress.json"
+DAILY_FILE = "daily_leads.json"  # leads added today, for the daily cap
+
+
+def leads_added_today():
+    if os.path.exists(DAILY_FILE):
+        with open(DAILY_FILE) as f:
+            data = json.load(f)
+        if data.get("date") == date.today().isoformat():
+            return data["leads"]
+    return 0
+
+
+def record_lead():
+    count = leads_added_today() + 1
+    with open(DAILY_FILE, "w") as f:
+        json.dump({"date": date.today().isoformat(), "leads": count}, f)
 
 
 def query_signature(queries):
